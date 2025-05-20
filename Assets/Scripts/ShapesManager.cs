@@ -608,6 +608,8 @@ public class ShapesManager : MonoBehaviour
                     GameObject candy = shapes[row, column];
                     if (candy != null)
                     {
+                        // 停止与该对象关联的所有动画
+                        candy.transform.DOKill();
                         Destroy(candy);
                         shapes[row, column] = null;
                     }
@@ -644,17 +646,72 @@ public class ShapesManager : MonoBehaviour
                 }
             }
 
-            // 检查潜在匹配
-            StartCheckForPotentialMatches();
+            StartCoroutine(ProcessMatchesAfterShuffle());
 
             shuffleItemUsageCount--;
-
             UpdateShuffleItemUsageCountUI();
         }
         else
         {
             Debug.Log("洗牌道具已用完");
         }
+    }
+
+    private IEnumerator ProcessMatchesAfterShuffle()
+    {
+        IEnumerable<GameObject> totalMatches;
+        do
+        {
+            // 获取所有糖果
+            List<GameObject> allCandies = new List<GameObject>();
+            for (int row = 0; row < Constants.Rows; row++)
+            {
+                for (int column = 0; column < Constants.Columns; column++)
+                {
+                    GameObject candy = shapes[row, column];
+                    if (candy != null)
+                    {
+                        allCandies.Add(candy);
+                    }
+                }
+            }
+
+            // 检查匹配
+            totalMatches = shapes.GetMatches(allCandies);
+
+            if (totalMatches.Count() >= Constants.MinimumMatches)
+            {
+                // 增加分数
+                IncreaseScore((totalMatches.Count() - 2) * Constants.Match3Score);
+                soundManager.PlayCrincle();
+
+                // 消除匹配的糖果
+                foreach (var item in totalMatches)
+                {
+                    shapes.Remove(item);
+                    RemoveFromScene(item);
+                }
+
+                // 获取需要处理的列
+                var columns = totalMatches.Select(go => go.GetComponent<Shape>().Column).Distinct();
+
+                // 合并消除后的空位
+                var collapsedCandyInfo = shapes.Collapse(columns);
+                // 创建新的糖果
+                var newCandyInfo = CreateNewCandyInSpecificColumns(columns);
+
+                int maxDistance = Mathf.Max(collapsedCandyInfo.MaxDistance, newCandyInfo.MaxDistance);
+
+                MoveAndAnimate(newCandyInfo.AlteredCandy, maxDistance);
+                MoveAndAnimate(collapsedCandyInfo.AlteredCandy, maxDistance);
+
+                // 等待动画完成
+                yield return new WaitForSeconds(Constants.MoveAnimationMinDuration * maxDistance);
+            }
+        } while (totalMatches.Count() >= Constants.MinimumMatches);
+
+        // 检查潜在匹配
+        StartCheckForPotentialMatches();
     }
 
     // 更新洗牌道具使用次数的 UI 显示
